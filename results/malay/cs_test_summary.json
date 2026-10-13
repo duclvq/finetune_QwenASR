@@ -1,0 +1,50 @@
+{
+  "base": {
+    "infer_seconds": 80.0,
+    "All": {
+      "clips": 221,
+      "wer": 25.69,
+      "cer": 9.77
+    }
+  },
+  "lora-1.7b-malay50h": {
+    "infer_seconds": 87.8,
+    "All": {
+      "clips": 221,
+      "wer": 28.53,
+      "cer": 13.09
+    }
+  },
+  "lora-1.7b-malay50h-clean": {
+    "infer_seconds": 80.6,
+    "All": {
+      "clips": 221,
+      "wer": 27.7,
+      "cer": 12.25
+    }
+  },
+  "lora-1.7b-malay50h-mix": {
+    "infer_seconds": 72.4,
+    "All": {
+      "clips": 221,
+      "wer": 8.69,
+      "cer": 4.01
+    }
+  },
+  "lora-1.7b-malay50h-mix-cont": {
+    "infer_seconds": 71.1,
+    "All": {
+      "clips": 221,
+      "wer": 8.98,
+      "cer": 4.19
+    }
+  },
+  "lora-1.7b-malay50h-babel": {
+    "infer_seconds": 94.0,
+    "All": {
+      "clips": 221,
+      "wer": 8.69,
+      "cer": 3.95
+    }
+  }
+}

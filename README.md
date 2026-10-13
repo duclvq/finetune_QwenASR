@@ -33,11 +33,12 @@ eval_wer.py            WER/CER of base + adapters on a prepared split; writes pe
 score_malay.py         Malay scoring (Revolab text normalizer + number spelling) of eval_wer.py predictions
 eval_revolab.py        Revolab/ASR-Benchmark-Public (820 clips, 12 domains), per-domain WER
 tb_sync.py             mirrors outputs/*/train_log.jsonl into TensorBoard, live
+plot_malay.py          draws every figure in docs/malay.md from results/malay/ into docs/figures/
 smoke_test.py          loads the base model and transcribes one clip (transformers or vllm backend)
 data_prep/             dataset builders: build, 50h subset, VAD stats, label cleaning, code-switch/English mix, BabelSpeech
 scripts/               run_malay.sh (data -> train -> eval chain), setup.sh + env.sh (Linux venv + GPU)
 notebooks/             colab_train_malay_babel.ipynb: resume training and evaluate on a Colab A100 from Drive
-docs/malay.md          full report
+docs/malay.md          full report; docs/figures/ its charts (training curves, WER by test/domain, error analysis)
 results/malay/         every run's train log / summary and every test prediction (source of all numbers)
 requirements.txt       pinned Python deps (torch installed separately)
 ```

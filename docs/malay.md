@@ -41,6 +41,9 @@ benchmark's own scoring (best of `text`/`normalized_text` per row).
 
 ## Results
 
+![WER by system on the four test sets](figures/wer_overview.png)
+
+
 ### In-domain test (1,994 clips)
 
 "Clean" = the 1,860 clips whose label is not truncated.
@@ -76,18 +79,26 @@ lora-mix-cont: All 13.89. Domains have ~50 clips, so differences of 1-2 points b
 within noise; the telephony gain (19.1 -> 16.3) is the one that looks real and is plausible (closest domain to
 conversational speech).
 
+![Revolab benchmark by domain](figures/revolab_domains.png)
+
+
 ### Synthetic code-switch test (cs_test)
 
-221 held-out Synth-Manglish clips (the `malay_50h_babel` build; the earlier 203-clip version gave lora-mix 7.42).
+221 held-out Synth-Manglish clips (the `malay_50h_babel` build; `results/malay/cs_test_summary.json`, basic
+normalization). The earlier 203-clip version with Malay normalization gave lora-mix 7.42.
 
 | System | WER | CER |
 |---|---|---|
 | base | 25.69 | 9.77 |
+| lora | 28.53 | 13.09 |
+| lora-clean | 27.70 | 12.25 |
 | lora-mix | 8.69 | 4.01 |
+| lora-mix-cont | 8.98 | 4.19 |
 | lora-babel | 8.69 | **3.95** |
 
-TTS from the same source and voices as the training data, so in-distribution and optimistic; not evidence about
-real code-switched speech. babel_test below is.
+The Malay-only runs are *worse* than base here (English forgetting); the code-switch/English mix fixes it. TTS from
+the same source and voices as the training data, so in-distribution and optimistic; not evidence about real
+code-switched speech. babel_test below is.
 
 ### Real code-switch test (babel_test: BabelSpeech speaker spk001, 377 clips, 20,175 words)
 
@@ -99,6 +110,9 @@ real code-switched speech. babel_test below is.
 
 lora-mix never saw BabelSpeech, so its 17.9 -> 14.8 is a true out-of-domain gain on real code-switched speech.
 lora-babel saw 12h of the same corpus from other speakers.
+
+![Per-clip WER, lora-babel vs lora-mix on babel_test](figures/babel_per_clip.png)
+
 
 #### How much of the babel gain is real recognition?
 
@@ -117,6 +131,9 @@ So roughly a third of the lora-mix -> lora-babel gap is label convention; the re
 is recognition. Remaining lora-babel errors are mostly discourse particles (dropped "kan", "lah", "dia"; inserted
 "aku", "lah", "and") and diorang/dia, where labels themselves are inconsistent.
 
+![Top substitutions and convention-neutralized WER on babel_test](figures/babel_conventions.png)
+
+
 **Caveat:** one speaker, one recording setup. Treat 7.8 as an in-corpus number. The robust claims are: adding real
 conversational data did not hurt any other test, and it helped telephony.
 
@@ -128,6 +145,9 @@ Eval loss bottomed at 0.783 (step 1,800) and then rose to ~0.80 while train loss
 epochs 3-4 of the same data. Worse everywhere (test 38.42, Revolab 13.89, cs_test 7.48). More epochs on the same
 data do not help; new data does (lora-babel).
 
+![Training curves of all runs](figures/train_curves.png)
+
+
 ## Analysis
 
 1. **In-domain gain is real and stable** (~37 WER vs 52) and does not depend on the data variant. Remaining errors
@@ -135,6 +155,8 @@ data do not help; new data does (lora-babel).
 2. **Truncated labels -> deletions.** The corpus is semi-supervised; Silero VAD finds ~6% of clips whose transcript is
    far too short for the speech and ~1% with no speech. Training on them taught the model to drop words. Removing
    them (lora-clean) lowers deletions, but the overall gain is small because the test labels are equally noisy.
+![Error breakdown: substitutions, deletions, insertions](figures/error_breakdown.png)
+
 3. **English / code-switch forgetting was the main out-of-domain problem.** Malay-only LoRAs map English speech onto
    Malay words ("that's all" -> "datang"), wrecking telephony (14 -> 33-38). Adding 7.3h code-switch + 5h English
    (lora-mix) fixes most of it; adding 12h real conversational Malay (lora-babel) adds nothing on Revolab overall but
@@ -165,6 +187,9 @@ Colab (`notebooks/colab_train_malay_babel.ipynb`, A100 40GB):
 - Data must be copied from Drive to local disk first (memmap through the Drive FUSE mount is far too slow); the
   output dir is a symlink into Drive so checkpoints survive disconnects.
 
+![Step time: local RTX 5060 Ti vs Colab A100](figures/step_time.png)
+
+
 ## Next steps
 
 1. A second held-out BabelSpeech speaker (spk009, 0.2h, costs nothing in training data) to get a multi-speaker real
@@ -178,6 +203,7 @@ Colab (`notebooks/colab_train_malay_babel.ipynb`, A100 40GB):
 
 ## Reproduce
 
+All figures: `python plot_malay.py` (reads `results/malay/`, writes `docs/figures/`).
 See `scripts/run_malay.sh` (the full data -> train -> eval chain with the paths used here) and the Colab notebook
 for training/evaluating without a local GPU. Per-clip predictions, scores and train logs for all systems are in
 `results/malay/` (`test_*`, `revolab_*`, `cs_test_*`, `babel_test_*`, `train_log_*`, `train_summary_*`). Adapters are
