@@ -1,0 +1,47 @@
+{
+  "bf16": {
+    "method": "bf16",
+    "bits": 16,
+    "group": 0,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "test",
+    "clips": 300,
+    "wer": 36.22,
+    "cer": 20.0,
+    "gpu_gb_after_load": 3.8,
+    "gpu_gb_peak": 5.07,
+    "load_s": 16.8,
+    "infer_s": 115.5,
+    "empty_hyps": 0
+  },
+  "q8": {
+    "method": "hqq",
+    "bits": 8,
+    "group": 64,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "test",
+    "clips": 300,
+    "wer": 35.9,
+    "cer": 19.79,
+    "gpu_gb_after_load": 2.66,
+    "gpu_gb_peak": 3.93,
+    "load_s": 17.3,
+    "infer_s": 261.6,
+    "empty_hyps": 0
+  },
+  "q4": {
+    "method": "hqq",
+    "bits": 4,
+    "group": 64,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "test",
+    "clips": 300,
+    "wer": 39.42,
+    "cer": 21.51,
+    "gpu_gb_after_load": 4.66,
+    "gpu_gb_peak": 5.92,
+    "load_s": 18.7,
+    "infer_s": 323.1,
+    "empty_hyps": 0
+  }
+}

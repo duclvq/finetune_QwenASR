@@ -1,0 +1,47 @@
+{
+  "q3": {
+    "method": "hqq",
+    "bits": 3,
+    "group": 64,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "babel_test",
+    "clips": 60,
+    "wer": 144.61,
+    "cer": 126.21,
+    "gpu_gb_after_load": 1.88,
+    "gpu_gb_peak": 3.1,
+    "load_s": 9.4,
+    "infer_s": 595.6,
+    "empty_hyps": 0
+  },
+  "q3g16": {
+    "method": "hqq",
+    "bits": 3,
+    "group": 16,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "babel_test",
+    "clips": 60,
+    "wer": 73.85,
+    "cer": 59.77,
+    "gpu_gb_after_load": 4.28,
+    "gpu_gb_peak": 5.5,
+    "load_s": 7.4,
+    "infer_s": 478.3,
+    "empty_hyps": 0
+  },
+  "q2": {
+    "method": "hqq",
+    "bits": 2,
+    "group": 64,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "babel_test",
+    "clips": 60,
+    "wer": 104.9,
+    "cer": 138.16,
+    "gpu_gb_after_load": 5.95,
+    "gpu_gb_peak": 7.17,
+    "load_s": 9.3,
+    "infer_s": 431.6,
+    "empty_hyps": 2
+  }
+}

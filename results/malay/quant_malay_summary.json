@@ -1,0 +1,62 @@
+{
+  "bf16": {
+    "method": "bf16",
+    "bits": 16,
+    "group": 0,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "babel_test",
+    "clips": 377,
+    "wer": 8.62,
+    "cer": 4.37,
+    "gpu_gb_after_load": 3.8,
+    "gpu_gb_peak": 5.03,
+    "load_s": 2.7,
+    "infer_s": 344.0,
+    "empty_hyps": 0
+  },
+  "q8": {
+    "method": "hqq",
+    "bits": 8,
+    "group": 64,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "babel_test",
+    "clips": 377,
+    "wer": 8.65,
+    "cer": 4.36,
+    "gpu_gb_after_load": 2.66,
+    "gpu_gb_peak": 3.88,
+    "load_s": 6.5,
+    "infer_s": 915.9,
+    "empty_hyps": 0
+  },
+  "q6": {
+    "method": "fake-rtn",
+    "bits": 6,
+    "group": 64,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "babel_test",
+    "clips": 377,
+    "wer": 8.75,
+    "cer": 4.52,
+    "gpu_gb_after_load": 6.47,
+    "gpu_gb_peak": 7.69,
+    "load_s": 4.3,
+    "infer_s": 410.0,
+    "empty_hyps": 0
+  },
+  "q4": {
+    "method": "hqq",
+    "bits": 4,
+    "group": 64,
+    "model": "outputs/lora-1.7b-malay50h-babel\\merged",
+    "split": "babel_test",
+    "clips": 377,
+    "wer": 10.06,
+    "cer": 4.79,
+    "gpu_gb_after_load": 4.66,
+    "gpu_gb_peak": 5.88,
+    "load_s": 9.1,
+    "infer_s": 902.2,
+    "empty_hyps": 0
+  }
+}

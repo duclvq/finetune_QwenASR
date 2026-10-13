@@ -32,12 +32,14 @@ train_qwen_asr.py      LoRA / QLoRA / full trainer (--mode), per-step log, auto-
 eval_wer.py            WER/CER of base + adapters on a prepared split; writes per-clip predictions
 score_malay.py         Malay scoring (Revolab text normalizer + number spelling) of eval_wer.py predictions
 eval_revolab.py        Revolab/ASR-Benchmark-Public (820 clips, 12 domains), per-domain WER
+eval_quant.py          merge a LoRA adapter, then HQQ weight-only quantization sweep (bf16 / int8 / int4 / ...) with WER and memory
 tb_sync.py             mirrors outputs/*/train_log.jsonl into TensorBoard, live
 plot_malay.py          draws every figure in docs/malay.md from results/malay/ into docs/figures/
 smoke_test.py          loads the base model and transcribes one clip (transformers or vllm backend)
 data_prep/             dataset builders: build, 50h subset, VAD stats, label cleaning, code-switch/English mix, BabelSpeech
 scripts/               run_malay.sh (data -> train -> eval chain), setup.sh + env.sh (Linux venv + GPU)
 notebooks/             colab_train_malay_babel.ipynb: resume training and evaluate on a Colab A100 from Drive
+deploy/                Docker Compose serving with vLLM (FP8) + bench.py API load test; see deploy/README.md
 docs/malay.md          full report; docs/figures/ its charts (training curves, WER by test/domain, error analysis)
 results/malay/         every run's train log / summary and every test prediction (source of all numbers)
 requirements.txt       pinned Python deps (torch installed separately)
@@ -112,6 +114,16 @@ python eval_revolab.py --model_path <model> --runs <run>...      # Revolab bench
 ```
 `eval_wer.py` writes `<system>_predictions.jsonl` (ref, hyp, per-clip errors) and merges into `summary.json`, so
 systems can be added one at a time (`--skip_base`, `--only`).
+
+**Quantize and serve:**
+```bash
+python eval_quant.py --model_path <model> --adapter outputs/lora-1.7b-malay50h-babel/adapter --data <data> --split babel_test --lang Malay --configs bf16 q8 q4
+cd deploy && cp .env.example .env && docker compose up -d --build     # vLLM 0.14, OpenAI-compatible API on :8100, FP8 weights
+python deploy/bench.py --levels 1 2 4 8 16 32 64                      # RTF per clip length and per concurrency level
+```
+The first `eval_quant.py` call also writes the merged checkpoint `outputs/<run>/merged` that the container serves.
+Results on this model: int8 is free (babel_test 8.62 -> 8.65 WER), int4 costs ~1.4 WER, 3-bit collapses; see docs/malay.md.
+Served through vLLM FP8 on an RTX 5060 Ti: single-stream RTF 0.05, 64 concurrent requests at p95 RTF 0.15 (`deploy/README.md`).
 
 **Whole pipeline:** `scripts/run_malay.sh` runs all five data builds, the best run and the four evaluations; each
 stage is skipped when its output exists.

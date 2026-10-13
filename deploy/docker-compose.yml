@@ -1,0 +1,59 @@
+# Qwen3-ASR-1.7B Malay (LoRA merged) served by vLLM 0.14.0 as an OpenAI-compatible API.
+#   cp .env.example .env   # edit MODEL_DIR etc.
+#   docker compose up -d --build
+# Variables are read from deploy/.env (same directory as this file); defaults below apply if unset.
+services:
+  asr:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qwen3-asr-vllm:0.14.0
+    container_name: qwen3-asr
+    restart: unless-stopped
+    # vLLM uses shared memory for multiprocessing / multimodal IPC
+    ipc: host
+    shm_size: "8g"
+    ports:
+      - "${PORT:-8100}:${PORT:-8100}"
+    environment:
+      MODEL_PATH: ${MODEL_PATH:-/model}      # keep /model for the bind mount; a HF repo id also works (needs HF cache + network)
+      SERVED_NAME: ${SERVED_NAME:-qwen3-asr-malay}
+      HOST: 0.0.0.0
+      PORT: ${PORT:-8100}
+      QUANT: ${QUANT:-fp8}
+      DTYPE: ${DTYPE:-bfloat16}
+      MAX_SEQS: ${MAX_SEQS:-96}
+      MAX_MODEL_LEN: ${MAX_MODEL_LEN:-4096}
+      MAX_BATCHED: ${MAX_BATCHED:-16384}
+      GPU_MEM: ${GPU_MEM:-0.9}
+      API_KEY: ${API_KEY:-}
+      EXTRA_ARGS: ${EXTRA_ARGS:-}
+      HF_HOME: /root/.cache/huggingface
+      HF_TOKEN: ${HF_TOKEN:-}
+    volumes:
+      # merged checkpoint (config.json + model.safetensors + tokenizer/preprocessor files), read-only
+      - ${MODEL_DIR:-../outputs/lora-1.7b-malay50h-babel/merged}:/model:ro
+      # HF cache: only used if MODEL_PATH is a hub id or vLLM needs to fetch anything
+      - ${HF_CACHE:-hf-cache}:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1              # to pin a specific GPU replace with: device_ids: ["1"]
+              capabilities: [gpu]
+    healthcheck:
+      # vLLM 0.14.0 serves GET /health (vllm/entrypoints/serve/instrumentator/health.py): 200 when the
+      # engine answers, 503 when it is dead. It is exempt from --api-key auth (only /v1/* is protected).
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import os,sys,urllib.request; r=urllib.request.urlopen('http://127.0.0.1:%s/health' % os.environ.get('PORT','8100'), timeout=5); sys.exit(0 if r.status==200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s          # weight load + FP8 conversion + CUDA-graph capture can take several minutes
+
+volumes:
+  hf-cache:

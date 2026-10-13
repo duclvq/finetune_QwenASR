@@ -190,6 +190,27 @@ Colab (`notebooks/colab_train_malay_babel.ipynb`, A100 40GB):
 ![Step time: local RTX 5060 Ti vs Colab A100](figures/step_time.png)
 
 
+## Quantization of the best Malay model (lora-babel merged, HQQ, RTX 5060 Ti)
+
+`eval_quant.py --adapter outputs/lora-1.7b-malay50h-babel/adapter` merges the adapter into the base and sweeps
+weight-only HQQ on the LLM linears (audio encoder bf16). Basic normalization; babel_test = 377 clips unless noted,
+in-domain = 300 random test clips. Inference time is for babel_test on the RTX 5060 Ti (transformers backend,
+HQQ dequantizes on every matmul, so int8/int4 are 2-3x slower here; vLLM's FP8 path does not have this cost).
+
+| Precision | babel_test WER | babel CER | in-domain WER (300) | GPU after load | Inference |
+|---|---|---|---|---|---|
+| bf16 | 8.62 | 4.37 | 36.22 | 3.80 GB | 344 s |
+| HQQ int8, g64 | 8.65 | 4.36 | 35.90 | 2.66 GB | 916 s |
+| RTN int6 (simulation, no memory saving) | 8.75 | 4.52 | – | 6.47 GB | 410 s |
+| HQQ int4, g64 | 10.06 | 4.79 | 39.42 | 4.66 GB | 902 s |
+| HQQ int3, g64 | 144.61 (60 clips) | 126.21 | – | 1.88 GB | 596 s* |
+| HQQ int3, g16 | 73.85 (60 clips) | 59.77 | – | 4.28 GB | 478 s* |
+| HQQ int2, g64 | 104.90 (60 clips) | 138.16 | – | 5.95 GB | 432 s* |
+
+\* 60-clip subset. Same picture as on Vietnamese: int8 is free (+0.03 / -0.3 WER), int4 costs 1.4-3.2 WER, 3-bit and 2-bit collapse without calibration (group 16 helps but stays unusable). For serving,
+`deploy/` uses vLLM's weight-only FP8 (near-lossless, no dequantization cost). The int4 memory reading (4.66 GB) is
+higher than on the Linux box (2.01 GB for the Vietnamese model) and was not investigated. Raw: `results/malay/quant_malay_*.json`.
+
 ## Next steps
 
 1. A second held-out BabelSpeech speaker (spk009, 0.2h, costs nothing in training data) to get a multi-speaker real
