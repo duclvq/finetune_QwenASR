@@ -1,6 +1,5 @@
 # Training + evaluation (what the reported runs used; CPU/GPU-specific torch is installed separately, see README).
-# Linux box (Vietnamese track): torch 2.9.1, transformers 4.57.6, peft 0.21.2, vllm 0.14.0
-# Windows PC (Malay track):     torch 2.8.0+cu128, transformers 4.57.6, peft 0.18.1, numpy 1.26.4 (Python 3.13)
+# Windows PC (training):        torch 2.8.0+cu128, transformers 4.57.6, peft 0.18.1, numpy 1.26.4 (Python 3.13)
 # Colab (Malay babel run):      torch 2.x, numpy 2.x, peft current; pip uninstall torchao (0.10 breaks peft LoRA)
 qwen-asr==0.0.6
 transformers==4.57.6
@@ -12,12 +11,10 @@ jiwer>=3.1.0
 soundfile>=0.13.1
 librosa>=0.11.0
 pyarrow>=23.0.0
-silero-vad>=6.2.3          # data_prep/vad_stats.py, realtime/gateway.py
+silero-vad>=6.2.3          # data_prep/vad_stats.py
 psutil>=7.2.0              # CPU_AFFINITY pinning on Windows
 tensorboard>=2.20.0        # tb_sync.py (optional)
 
-# Optional, by feature:
+# Optional:
 # bitsandbytes>=0.49      QLoRA (--mode qlora) and paged AdamW for full fine-tune (Linux)
-# hqq>=0.2.8              eval_quant.py / load_hqq_asr.py weight-only quantization
-# qwen-asr[vllm]==0.0.6   scripts/serve_vllm.sh (vllm 0.14.0 on the Linux box)
-# fastapi uvicorn websockets   realtime/gateway.py and its test clients
+# qwen-asr[vllm]==0.0.6   vLLM serving (see the vi branch for the server script)
