@@ -1,21 +1,12 @@
 #!/usr/bin/env bash
-# Set up the Qwen3-ASR assessment workspace on aidev: code, venv, model weights.
+# One-shot Linux setup: third_party/Qwen3-ASR, .venv (uv), model weights. Run from anywhere: scripts/setup.sh
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 UV=~/.local/bin/uv
 cd "$ROOT"
 
 echo "== repo"
 [ -d .git ] || git init -q
-cat > .gitignore <<'EOF'
-.venv/
-models/
-data/
-outputs/
-third_party/
-*.log
-__pycache__/
-EOF
 mkdir -p third_party models data outputs
 [ -d third_party/Qwen3-ASR ] || git clone -q https://github.com/QwenLM/Qwen3-ASR.git third_party/Qwen3-ASR
 git -C third_party/Qwen3-ASR log -1 --format="Qwen3-ASR commit %h (%cd)"

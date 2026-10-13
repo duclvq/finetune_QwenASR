@@ -38,5 +38,13 @@
       "wer": 39.49,
       "cer": 22.1
     }
+  },
+  "lora-1.7b-malay50h-babel": {
+    "infer_seconds": 876.5,
+    "All": {
+      "clips": 1994,
+      "wer": 38.11,
+      "cer": 21.23
+    }
   }
 }

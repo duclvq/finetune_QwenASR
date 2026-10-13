@@ -94,5 +94,13 @@
       "del": 0.6,
       "ins": 0.7
     }
+  },
+  "lora-1.7b-malay50h-babel": {
+    "infer_seconds": 94.0,
+    "All": {
+      "clips": 221,
+      "wer": 8.69,
+      "cer": 3.95
+    }
   }
 }

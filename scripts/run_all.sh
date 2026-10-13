@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sequential queue: LoRA -> QLoRA -> eval (base, lora, qlora on test). Resumable: rerun to continue.
-cd "$(dirname "$0")" && source env.sh
+cd "$(dirname "$0")/.." && source scripts/env.sh
 COMMON="--epochs 2 --lr 1e-4 --batch_size 8 --grad_acc 2 --eval_steps 100 --save_steps 100"
 for m in lora qlora; do
   [ -f outputs/$m-1.7b/summary.json ] && continue

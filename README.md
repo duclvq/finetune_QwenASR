@@ -1,149 +1,180 @@
-# finetune_QwenASR_on_Vietnamese
+# Fine-tuning Qwen3-ASR-1.7B: Vietnamese and Malay
 
-Fine-tuning [Qwen3-ASR-1.7B](https://github.com/QwenLM/Qwen3-ASR) for Vietnamese dialect speech with **LoRA, QLoRA and full fine-tuning**, plus weight-only quantization (q8 → q2) and vLLM serving. Everything here was run on a single 24 GB GPU; every training step is logged (`results/*/train_log.jsonl`).
+Code, data pipelines, results and serving for fine-tuning [Qwen3-ASR-1.7B](https://github.com/QwenLM/Qwen3-ASR)
+with LoRA / QLoRA / full fine-tuning on two languages, plus weight-only quantization, vLLM serving and a realtime
+(WebSocket + VAD) gateway. One trainer and one evaluator serve both tracks; everything else is data preparation,
+scoring and reports.
 
-Models on Hugging Face (public):
-- LoRA adapter: [`duclvQ/qwen3-asr-1.7b-vimd-lora`](https://huggingface.co/duclvQ/qwen3-asr-1.7b-vimd-lora)
-- QLoRA adapter: [`duclvQ/qwen3-asr-1.7b-vimd-qlora`](https://huggingface.co/duclvQ/qwen3-asr-1.7b-vimd-qlora)
-- Full fine-tune (+ `q8/`, `q4/` HQQ variants): [`duclvQ/qwen3-asr-1.7b-vimd-full`](https://huggingface.co/duclvQ/qwen3-asr-1.7b-vimd-full)
-
-## Data
-
-[ViMD](https://huggingface.co/datasets/nguyendv02/ViMD_Dataset) (Vietnamese multi-dialect speech), North + Central regions, clips ≤ 30 s, converted to 16 kHz int16 (`data_prep/build_vimd_dataset.py`).
-
-| Split | Clips | Hours |
-|---|---|---|
-| train | 10,346 | 54.9 |
-| valid | 1,321 | 7.0 |
-| test | 1,368 | 7.2 (939 speakers, none in train) |
-
-Transcripts are verbatim: numbers spelled out, fillers and repetitions kept. Check the dataset's license before reuse.
-
-## Results (test set, 1,368 clips)
-
-WER/CER after lowercasing and stripping punctuation, `language="Vietnamese"` forced. One seed per method.
-
-| System | WER | CER | WER North | WER Central | Train time | Peak GPU | Trainable |
-|---|---|---|---|---|---|---|---|
-| Qwen3-ASR-1.7B (zero-shot) | 11.56 | 8.12 | 8.56 | 15.45 | – | – | – |
-| LoRA (r=16, lr 1e-4) | 8.72 | 6.29 | 6.59 | 11.47 | 62 min | 13.1 GB | 17.4M (0.85%) |
-| QLoRA (NF4, r=16, lr 1e-4) | 9.45 | 6.80 | 7.23 | 12.31 | 75 min | 13.3 GB | 17.4M |
-| Full FT (lr 1e-5) | **8.59** | **6.17** | 6.60 | **11.17** | 126 min | 18.1 GB | 2.04B |
-
-Common settings: 2 epochs (1,294 steps), effective batch 16, cosine schedule, bf16, gradient checkpointing, seed 42.
-Full FT beats LoRA by only 0.13 WER (within noise) at twice the training time and 5 GB more memory, so LoRA is the better trade-off here. QLoRA is ~0.7 WER behind LoRA and was slower with no memory benefit at this model size.
-
-### Is the gain real recognition or just label format?
-
-Partly format. Analysis on the LoRA predictions (`results/eval_test/`):
-- The references spell numbers out; the base model writes digits in 74 clips. Those clips account for 0.65 of the 2.84 WER points gained.
-- Filler/repetition handling ("cái", "là", "thì", repeats) accounts for ~0.4 points.
-- Substitutions (dialect words, e.g. `chi→tri`, `chèo→trèo`, `các→cả`) fell from 5.72% to 3.93% (63% of the gain).
-- With digit clips and fillers/repeats neutralised, WER goes 8.51 → 6.69, so ~64% of the raw gain remains.
-- No speaker overlap between train and test; 4 of 1,368 test texts appear in train.
-
-The filler list was hand-picked, so treat "~64%" as roughly 55–70%.
-
-**Number normalization (`vi_numbers.py`, `rescore_numbers.py`).** Digits in a hypothesis are rewritten to spoken Vietnamese before scoring. A number has several valid readings (hai nghìn không trăm hai mươi hai / hai nghìn hai mươi hai / hai không hai hai; tư/bốn; lẻ/linh/không; nghìn/ngàn), so there is a default reading and a "best" mode that picks, per number, the reading with the fewest errors against the reference (optimistic).
-
-| System | raw WER | numbers normalized (default) | numbers normalized (best reading) |
+| Track | Best system | Key result | Report |
 |---|---|---|---|
-| Zero-shot | 11.56 | 11.15 | 11.06 |
-| LoRA | 8.72 | 8.72 | 8.72 |
-| QLoRA | 9.45 | 9.44 | 9.44 |
-| Full | 8.59 | 8.59 | 8.59 |
+| **Vietnamese** (ViMD, North + Central dialects) | full fine-tune, LoRA within noise | test WER 11.56 -> **8.59** (LoRA 8.72) | [docs/vietnamese.md](docs/vietnamese.md) |
+| **Malay** + Malay-English code-switch | `lora-1.7b-malay50h-babel` | Revolab benchmark 15.01 -> **13.39**; real code-switch 17.9 -> **7.8** | [docs/malay.md](docs/malay.md) |
 
-Only the zero-shot model writes digits (71 clips, 135 numbers), and all 71 clips improve. Number formatting explains 0.41-0.50 of the 2.84 WER points (14-18%); the remaining gap to LoRA is 2.34-2.43. On the 71 clips: zero-shot 16.94 raw, 8.78 with best-reading normalization, LoRA 6.35, full 6.24. Counting clips where the fine-tuned model has at least 2 fewer errors than the number-normalized zero-shot: LoRA 34, full 36 (35 and 30 clips differ only in number format). Adding the ~0.4 points from fillers and repeats (hand-picked list, may overlap), roughly 68-72% of the gain is recognition. Per-clip normalized hypotheses are in `results/eval_test/*_numnorm.jsonl`, totals in `results/number_norm_summary.json`.
+Public models (Vietnamese): [`duclvQ/qwen3-asr-1.7b-vimd-lora`](https://huggingface.co/duclvQ/qwen3-asr-1.7b-vimd-lora),
+[`duclvQ/qwen3-asr-1.7b-vimd-qlora`](https://huggingface.co/duclvQ/qwen3-asr-1.7b-vimd-qlora),
+[`duclvQ/qwen3-asr-1.7b-vimd-full`](https://huggingface.co/duclvQ/qwen3-asr-1.7b-vimd-full) (+ `q8/`, `q4/` HQQ).
+Malay adapters are not published; see "Where things live" below.
 
-## Quantization (full fine-tuned model)
+## Repository layout
 
-Weight-only [HQQ](https://github.com/mobiusml/hqq) (no calibration) on the LLM linears; audio encoder stays bf16. 400 random test clips unless noted.
-
-| Variant | WER | CER | GPU after load |
-|---|---|---|---|
-| bf16 | 8.68 | 6.29 | 3.80 GB |
-| q8 | 8.69 | 6.29 | 2.66 GB |
-| q6 (RTN simulation, no memory saving) | 8.63 | 6.18 | 3.80 GB |
-| q4 | 10.29 | 7.21 | 2.00 GB |
-| q3 (group 64) | 100.92 | 96.84 | 1.88 GB |
-
-On a different 100-clip subset (bf16 = 9.98 WER): q4 11.64, q3 group 16 23.85, q2 group 16 104.0, q2 group 64 108.1. In short: q8/q6 are free, q4 costs ~1.6 WER, q3 and q2 collapse without calibration. These are floors for a calibration-free method, not for quantization in general; AWQ/GPTQ/QAT were not tried. HQQ inference in transformers is ~2x slower than bf16.
-
-## Serving with vLLM
-
-`./serve_vllm.sh` serves the full model (OpenAI-compatible, `127.0.0.1:8100`, 96 concurrent sequences (`MAX_SEQS`, was 32), `max-model-len 4096`, `gpu-memory-utilization 0.5`).
-
-- Supported: `POST /v1/audio/transcriptions` (`json`/`text`, `stream=true`), `/v1/chat/completions` with `audio_url`.
-- Not supported: `verbose_json`/`srt`/`vtt` (no timestamps), OpenAI Realtime API, Batch API.
-- Measured: ~16 req/s (~300x real time) at 32–64 clients; p95 latency 2.7 s at 32, 12 s at 128 (requests queue, none failed). WER through vLLM (8.13 on 300 clips) matched offline inference (8.40).
-- **Outputs start with `language Vietnamese<asr_text>`** (the training target format); strip it client-side with `^\s*language\s+\S+?<asr_text>`, otherwise WER is inflated.
-- Untested: audio longer than 30 s (training clips were ≤ 30 s; 58 s and 142 s files returned plausible text but were not scored).
-
-## Realtime transcription (proof of concept)
-
-`realtime/gateway.py` is a WebSocket gateway in front of the vLLM server: audio in, Silero VAD, partial and final transcripts out. The vLLM server itself has no realtime endpoint, and Qwen's native streaming (`init_streaming_state`) was not used.
-
-```bash
-./serve_vllm.sh                                   # upstream ASR on :8100
-uvicorn gateway:app --app-dir realtime --port 8200 --workers 6   # one worker saturates a CPU core at ~30 users
-python realtime/test_stream.py --clips 12         # streams test clips at real-time speed
+```
+train_qwen_asr.py      LoRA / QLoRA / full trainer (--mode), per-step log, auto-resume from the last checkpoint
+eval_wer.py            WER/CER of base + adapters + full models on a prepared split (shared by both tracks)
+score_malay.py         Malay scoring (Revolab text normalizer + number spelling) of eval_wer.py predictions
+eval_revolab.py        Revolab/ASR-Benchmark-Public (820 Malay clips, 12 domains)
+vi_numbers.py          Vietnamese digit -> spoken-form normalization;  rescore_numbers.py re-scores with it
+eval_quant.py          HQQ weight-only quantization sweep;  load_hqq_asr.py loads the q8/q4 checkpoints
+tb_sync.py             mirrors outputs/*/train_log.jsonl into TensorBoard, live
+smoke_test.py          loads the base model on the transformers or vllm backend and transcribes one clip
+data_prep/             dataset builders -> the prepared format below (ViMD; Malay: build, subset, VAD, clean, mix, babel)
+realtime/              WebSocket realtime gateway (Silero VAD) in front of vLLM + streaming / load-test clients
+scripts/               setup.sh, env.sh (Linux venv + GPU), run_all.sh / run_full.sh (Vietnamese queues),
+                       run_malay.sh (Malay data -> train -> eval), serve_vllm.sh
+notebooks/             colab_train_malay_babel.ipynb: resume + evaluate a Malay run on a Colab A100 from Drive
+docs/                  vietnamese.md, malay.md: full reports (tables, analysis, infrastructure notes, next steps)
+results/               every run's args / summary / per-step train log and every test prediction (see below)
+requirements.txt       pinned Python deps (torch installed separately)
 ```
 
-- **Protocol:** subset of OpenAI's Realtime *transcription* session at `ws://host:8200/v1/realtime` (`input_audio_buffer.append/commit`, `speech_started/stopped`, `conversation.item.input_audio_transcription.completed`). Default input is 24 kHz PCM16 like OpenAI; `?sample_rate=16000` skips resampling. Partials use a **non-standard** event `...transcription.partial` carrying the full hypothesis so far.
-- **VAD:** yes, Silero VAD on 512-sample frames (threshold 0.2, 800 ms of silence ends an utterance, utterances over 25 s are split).
-- **Partials:** while speech is active, the audio of the current utterance is re-transcribed every 1 s (re-decoding a growing buffer, not incremental decoding). At end of speech it is transcribed once more as the final.
+Python scripts stay at the repository root on purpose: they import each other (`eval_wer` -> `train_qwen_asr`,
+`score_malay` -> `eval_wer`, ...) and are run as `python <script>.py` from the root.
 
-Measured with 12 test clips (209 s) streamed at 1x speed: 14 finals, stream WER 11.62 vs 9.94 for offline per-clip decoding of the same clips; final transcript arrives p50 1.15 s / p95 1.43 s after the audio of that utterance ends (about 0.8 s of that is the silence wait); first partial p50 1.24 s after speech starts. On a different 30 clips (4x pacing, WER only): 11.07 vs 11.46 offline.
+## Setup
 
-Things that mattered: Silero's default threshold (0.5) missed most of one noisy clip and added about 5 WER points on the 12-clip stream; 0.2 fixed it. Silence length changed segmentation (27 / 17 / 15 utterances at 500 / 800 / 1200 ms) but not WER.
-
-Limitations: only concatenated clean test clips with digital-silence gaps were tested (no microphone, no background noise, no overlapping speakers, one client at a time). The 0.2 threshold was tuned on 12 clips and its false-alarm rate on real noise is untested. 24 kHz resampling is per message and was not tested. Utterances split mid-sentence at long pauses lose some context.
-
-### Capacity (simulated users streaming at 1x, nearly continuous speech)
-
-`python realtime/load_test.py --users 16 32 56 --seconds 60` (raw results in `results/realtime_load/`). vLLM with 96 sequences, 6 gateway workers, RTX PRO 4000 Blackwell 24 GB:
-
-| Users | 4 | 16 | 24 | 32 | 40 | 56 | 80 | 112 | 144 |
-|---|---|---|---|---|---|---|---|---|---|
-| final latency p50 (s) | 1.21 | 1.57 | 1.73 | 2.20 | 2.56 | 3.24 | 3.93 | 5.07 | 7.40 |
-| final latency p95 (s) | 1.53 | 2.17 | 2.56 | 3.28 | 3.72 | 5.25 | 6.36 | 7.88 | 11.42 |
-
-p95 stays under 3 s up to ~28 users, under 5 s up to ~52, and no request failed in the two-generator runs at 112 and 144 users (the single-generator runs had 1 and 2 HTTP 400 errors, cause not investigated). Stream WER stayed at 7.9-9.6% up to 112 users.
-
-- GPU: 136-143 W of a 145 W limit from 16 users on (SM clock 2430 vs 3090 MHz max in one sample at 56 users), so it is power-limited; nvidia-smi "utilization" averages 50-70%, which is not a saturation measure. VRAM 11-14 GB of 24 GB.
-- A single gateway process hit 100% of one CPU core at ~30 users (p95 6.5 s at 32, 35 s at 40) while the GPU sat at 27-37%; 6 workers removed that bottleneck. vLLM `max-num-seqs` 32 to 96 cut p95 at 56 users from 7.2 to 5.25 s. Partials every 2 s instead of 1 s cut it further to 4.2 s (`PARTIAL_EVERY=2`), at the cost of a slower first partial.
-- Limits: clean test clips with digital-silence gaps only, one run per level, no real microphone or noise; whether vLLM's single engine loop (~1.8 CPU cores at 56 users) is a ceiling was not tested.
-
-## Reproduce
-
+**Linux (GPU box, everything incl. vLLM):**
 ```bash
-./setup.sh                      # venv (uv), qwen-asr[vllm]==0.0.6, models; edit env.sh for your GPU
-source env.sh
-pip install bitsandbytes hqq silero-vad   # QLoRA, quantization, realtime VAD
-python data_prep/build_vimd_dataset.py --out data/prepared
-export VIMD_DATA=$PWD/data/prepared
-./run_all.sh                    # LoRA -> QLoRA -> test eval (base, LoRA, QLoRA)
-./run_full.sh                   # full fine-tune -> test eval
-python eval_quant.py --configs bf16 q8 q6 q4 q3 q2 --max_samples 400
-./serve_vllm.sh
+scripts/setup.sh              # clones third_party/Qwen3-ASR, creates .venv with uv, installs qwen-asr[vllm]==0.0.6, downloads the model
+source scripts/env.sh         # activates .venv and selects the GPU (edit CUDA_VISIBLE_DEVICES)
+pip install bitsandbytes hqq silero-vad     # QLoRA, quantization, VAD, as needed
 ```
 
-| File | Purpose |
+**Windows / conda (training + eval, no vLLM):**
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu128    # match your CUDA
+pip install -r requirements.txt
+export USE_TF=0 CPU_AFFINITY=0-11 CUDA_MEM_FRACTION=0.8                  # see "Known behaviour"
+```
+
+**Colab:** open `notebooks/colab_train_malay_babel.ipynb` (needs a bf16 GPU: L4 / A100). It clones this repo, mounts
+Drive, copies the prepared data to local disk and resumes training from the checkpoints kept on Drive.
+
+Model weights: `Qwen/Qwen3-ASR-1.7B` from the Hub. Scripts default to `models/Qwen3-ASR-1.7B`; pass `--model_path`
+(a local dir or the Hub id). The Revolab benchmark dataset is gated: `huggingface-cli login` first (the Colab notebook
+reads an `HF_TOKEN` secret). `score_malay.py` and `eval_revolab.py` need a clone of
+[revolab-asr-benchmark](https://github.com/revolab-sdn-bhd/revolab-asr-benchmark) for its text normalizer:
+set `REVOLAB_DIR` to it.
+
+## Data format
+
+Every builder in `data_prep/` writes the same layout, which the trainer and evaluator memmap directly:
+
+```
+<data>/<split>/audio.bin    int16 mono 16 kHz samples, all clips concatenated
+<data>/<split>/meta.jsonl   one line per clip: {"offset", "length", "text", ...}  (region/speaker/filename when known)
+```
+
+Splits are `train`, `valid`, `test`, plus `cs_test` and `babel_test` in the Malay builds. Clips are <= 30 s.
+Reading `audio.bin` through a network or FUSE mount (Google Drive) is far too slow; keep it on local disk.
+
+| Builder | Produces |
 |---|---|
-| `train_qwen_asr.py` | LoRA / QLoRA / full training (`--mode lora\|qlora\|full`), logs every step to `train_log.jsonl` |
-| `eval_wer.py` | Test-set WER/CER for base, adapters and full models (overall + per region) |
-| `vi_numbers.py`, `rescore_numbers.py` | Vietnamese number normalization (digits to spoken readings) and re-scoring |
-| `eval_quant.py`, `load_hqq_asr.py` | Quantization sweep and loader for the HQQ checkpoints |
-| `serve_vllm.sh` | vLLM server config |
-| `realtime/` | WebSocket realtime gateway (Silero VAD) and streaming test client |
-| `results/` | Per-step training logs, run summaries, all test predictions |
+| `build_vimd_dataset.py` (+ `prepare_data.py`) | ViMD North + Central, 55h train / 7h valid / 7h test |
+| `build_malay_dataset.py` | up to N hours of `mesolitica/malaya-speech-malay-stt`, fixed-seed valid/test |
+| `subset_malay.py`, `vad_stats.py`, `clean_malay_subset.py` | 50h random subset; Silero VAD speech time per clip; drop truncated-label clips and top up |
+| `build_malay_mix.py` | + Synth-Manglish code-switch + cs_pilot + 5h FLEURS English (tagged `language English`) |
+| `build_malay_babel.py` | + BabelSpeech real conversational Malay, whole speakers held out as `babel_test` |
 
-Tested with: torch 2.9.1, transformers 4.57.6, peft 0.21.2, bitsandbytes 0.50.2, hqq 0.2.8, vllm 0.14.0, qwen-asr 0.0.6.
+Default source paths in the Malay builders point at the training PC (`D:/hf_datasets/...`, `D:/data/...`); override
+them with the flags, or set the variables at the top of `scripts/run_malay.sh`.
 
-## Notes and limitations
+## Running
 
-- One seed and one hyperparameter setting per method; differences below ~0.5 WER are not reliable.
-- QLoRA numbers are for the adapter merged into the bf16 base, not the 4-bit base it trained against.
-- Full-FT checkpoints saved weights only (disk was tight), so a resumed run restarts the optimizer.
-- A label-masking bug (the processor left-pads batches) was found and fixed before the real runs; the first pilot showed an implausible loss of ~24.
-- The upstream training script is in [Qwen3-ASR](https://github.com/QwenLM/Qwen3-ASR/tree/main/finetuning); this repo adds PEFT/QLoRA, per-step logging, evaluation, quantization and serving.
+**Train** (auto-resumes if `--output_dir` has a checkpoint; a resume must keep the checkpoint's `--batch_size`):
+```bash
+python train_qwen_asr.py --mode lora  --model_path <model> --data <data> --lang Malay --output_dir outputs/<run> \
+    --epochs 2 --lr 1e-4 --batch_size 4 --grad_acc 4 --eval_steps 200 --save_steps 200
+python train_qwen_asr.py --mode qlora ...          # NF4 base, needs bitsandbytes
+python train_qwen_asr.py --mode full  --lr 1e-5 ... # full fine-tune, saves outputs/<run>/final
+python train_qwen_asr.py --mode lora --init_adapter outputs/<run>/adapter ...   # continue a finished adapter with a fresh LR schedule
+python tb_sync.py & tensorboard --logdir outputs/tb                              # live curves
+```
+Outputs: `outputs/<run>/adapter` (or `final`), `checkpoint-*`, `train_log.jsonl` (every step: loss, LR, grad norm,
+step time, GPU memory), `summary.json` (wall time, peak memory, final eval loss), `args.json`.
+
+**Evaluate:**
+```bash
+python eval_wer.py --model_path <model> --data <data> [--split test|cs_test|babel_test] --lang Malay --runs <run>... --out outputs/eval_x
+python score_malay.py --dir outputs/eval_x                       # Malay: WER/CER/sub/del/ins under 3 normalizations
+python eval_revolab.py --model_path <model> --runs <run>...      # Malay: Revolab benchmark, per domain
+python rescore_numbers.py                                        # Vietnamese: digits -> spoken numbers, re-score
+python eval_quant.py --configs bf16 q8 q6 q4 --max_samples 400   # Vietnamese full model, HQQ sweep
+```
+`eval_wer.py` writes `<system>_predictions.jsonl` (ref, hyp, per-clip errors) and merges into `summary.json`, so
+systems can be added one at a time (`--skip_base`, `--only`).
+
+**Whole pipelines:** `scripts/run_all.sh` + `scripts/run_full.sh` (Vietnamese: LoRA, QLoRA, full, eval) and
+`scripts/run_malay.sh` (Malay: all data builds, the best run, all four evaluations). Each stage is skipped when its
+output exists.
+
+**Serve and stream (Vietnamese full model):**
+```bash
+scripts/serve_vllm.sh                                               # OpenAI-compatible API on 127.0.0.1:8100
+uvicorn gateway:app --app-dir realtime --port 8200 --workers 6      # realtime WebSocket gateway (Silero VAD)
+python realtime/test_stream.py --clips 12                           # streams test clips at 1x, reports latency + WER
+python realtime/load_test.py --users 16 32 56 --seconds 60          # simulated concurrent users
+```
+Model outputs start with `language Vietnamese<asr_text>`; strip `^\s*language\s+\S+?<asr_text>` client-side.
+Details, capacity numbers and limitations: [docs/vietnamese.md](docs/vietnamese.md).
+
+## Results summary
+
+Vietnamese, ViMD test (1,368 clips, 939 unseen speakers), WER:
+
+| zero-shot | LoRA r=16 | QLoRA | full FT |
+|---|---|---|---|
+| 11.56 | 8.72 | 9.45 | **8.59** |
+
+About two thirds of that gain is recognition; the rest is label format (numbers spelled out, fillers). HQQ q8 is
+free, q4 costs ~1.6 WER, q3/q2 collapse without calibration. vLLM serves ~16 req/s on a 24 GB GPU; the realtime
+gateway keeps p95 final-transcript latency under 3 s up to ~28 concurrent users.
+
+Malay, WER:
+
+| System | in-domain test (1,994) | Revolab (820, 12 domains) | synthetic code-switch (221) | real code-switch, unseen speaker (377) |
+|---|---|---|---|---|
+| base | 52.19 | 15.01 | 25.69 | 17.94 |
+| lora-mix (63h) | 37.35 | **13.38** | 8.69 | 14.76 |
+| **lora-babel (83h)** | **37.03** | 13.39 | 8.69 | **7.83** |
+
+The Malay-only LoRA (not shown) forgets English and loses to base out of domain; mixing in code-switched and English
+speech fixes that. About a third of lora-babel's gain on the real code-switch set is label-convention matching
+(spelling variants, spelled-out numbers); the rest is recognition. One test speaker only. Full tables, ablations and
+caveats: [docs/malay.md](docs/malay.md).
+
+## Where things live
+
+- `results/<run>/` (Vietnamese) and `results/malay/` (Malay): `args.json`, `summary.json`, full per-step
+  `train_log*.jsonl`, every test prediction (`*_predictions.jsonl`) and scores. These are the source for every number
+  in the reports.
+- Adapters / full models: Vietnamese on the Hub (links above). Malay adapters (`lora-1.7b-malay50h-mix`,
+  `lora-1.7b-malay50h-babel`) are on the training PC under `outputs/<run>/adapter` and in Google Drive
+  `My_dataset/outputs/<run>/adapter`; the prepared Malay data (`malay_50h_babel`, 10.6 GB) is in the same Drive folder.
+- Working dirs that are not in git: `outputs/` (runs, evals, queue scripts), `models/`, `data/`, `.venv/`, `.env`
+  (`HF_TOKEN`), `third_party/Qwen3-ASR` (upstream reference).
+
+## Known behaviour and gotchas
+
+- **Trainer is CPU-bound** at batch 4-8 (collator + dataloader). On Windows hybrid CPUs set `CPU_AFFINITY=0-11` to
+  stay on P-cores (2x throughput); a Colab A100 was no faster than an RTX 5060 Ti for the same reason. Use a larger
+  batch and more `--workers` on big GPUs.
+- `CUDA_MEM_FRACTION=0.8` on Windows prevents the allocator from silently spilling into shared system RAM.
+- **Resume** restores the checkpoint's batch size; `train_qwen_asr.py` refuses a different `--batch_size`. Checkpoints
+  written under numpy 1.x resume under numpy 2.x / torch >= 2.6 (the RNG file's numpy globals are allowlisted).
+- Colab ships torchao 0.10, which breaks peft's LoRA injection: uninstall it (the notebook does).
+- HF eval loss depends on eval batch size; compare runs by WER.
+- Set `USE_TF=0` if TensorFlow is installed in the environment, or transformers' Trainer import breaks.
+- Full-FT checkpoints save weights only (`save_only_model`), so a resumed full run restarts the optimizer.
+- Differences below ~0.5 WER (Vietnamese) or 1-2 WER on a 50-clip Revolab domain are within noise; one seed per run.
+
+Tested with: Linux torch 2.9.1 / transformers 4.57.6 / peft 0.21.2 / vllm 0.14.0; Windows torch 2.8.0+cu128 /
+transformers 4.57.6 / peft 0.18.1 / Python 3.13; qwen-asr 0.0.6 everywhere.
