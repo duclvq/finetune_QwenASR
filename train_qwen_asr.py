@@ -115,6 +115,30 @@ class StepLogger(TrainerCallback):
             print(row, flush=True)
 
 
+def fix_rng_state(ckpt):
+    """rng_state.pth holds numpy's RNG state, pickled under numpy's module names at save time. torch>=2.6 loads it
+    with weights_only=True and refuses globals that are not allowlisted; a checkpoint from another numpy (the
+    Windows run pickled numpy 1.x names, Colab runs numpy 2.x) kills the resume before the first step. Allowlist
+    numpy's reconstruct helpers under both spellings; if the file still won't load, set it aside (resume then
+    continues with fresh RNG state and a warning from the trainer, which is harmless)."""
+    rng = os.path.join(ckpt, "rng_state.pth")
+    if not os.path.exists(rng):
+        return
+    import numpy as np
+    reconstruct = getattr(np, "_core", np.core).multiarray._reconstruct
+    try:
+        torch.serialization.add_safe_globals([(reconstruct, "numpy.core.multiarray._reconstruct"),
+                                              (reconstruct, "numpy._core.multiarray._reconstruct"),
+                                              np.ndarray, np.dtype, np.dtypes.UInt32DType])
+    except (TypeError, ValueError):  # older torch without (obj, name) pairs: plain objects, current spelling only
+        torch.serialization.add_safe_globals([reconstruct, np.ndarray, np.dtype, np.dtypes.UInt32DType])
+    try:
+        torch.load(rng, weights_only=True)
+    except Exception as e:
+        os.replace(rng, rng + ".unloadable")
+        print(f"[resume] {rng} unloadable ({type(e).__name__}); set aside, resuming with fresh RNG state", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["lora", "qlora", "full"], required=True)
@@ -206,6 +230,7 @@ def main():
             raise SystemExit(f"[resume] {ckpt} was trained with batch_size {saved_bs}, not {args.batch_size}; "
                              f"resume with --batch_size {saved_bs} or start a new output_dir")
         print(f"[resume] {ckpt}", flush=True)
+        fix_rng_state(ckpt)
     t0 = time.time()
     trainer.train(resume_from_checkpoint=ckpt)
     final_eval = trainer.evaluate()
