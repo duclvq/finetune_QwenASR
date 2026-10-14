@@ -329,6 +329,59 @@ def fig_babel_conventions(res, out):
     save(fig, out, "babel_conventions.png")
 
 
+def fig_final_only(res, out):
+    """Grey, final-run-only variants of the Revolab-by-domain and label-convention figures (for the deck)."""
+    rev = J(os.path.join(res, "revolab_summary.json"))
+    runs = ["base", "lora-1.7b-malay50h-babel"]; col = {"base": "#BFBFBF", "lora-1.7b-malay50h-babel": "#262626"}
+    domains = [d for d in rev["base"] if d not in ("infer_seconds", "All")]
+    domains.sort(key=lambda d: rev["base"][d]["wer"])
+    fig, ax = plt.subplots(figsize=(9, 5)); y = np.arange(len(domains))
+    for i, d in enumerate(domains):
+        vals = [rev[r][d]["wer"] for r in runs]
+        ax.plot([min(vals), max(vals)], [i, i], color=GRID, linewidth=2, zorder=1)
+    for r in runs:
+        ax.scatter([rev[r][d]["wer"] for d in domains], y, s=60, color=col[r], edgecolor=SURFACE, linewidth=1.5,
+                   label={"base": "base", "lora-1.7b-malay50h-babel": "lora-babel (final)"}[r], zorder=3)
+    ax.set_yticks(y, [f"{d} (n={rev['base'][d]['clips']})" for d in domains]); ax.tick_params(axis="y", length=0)
+    ax.grid(axis="y", visible=False); ax.set_xlabel("WER % (benchmark scoring)")
+    ax.set_title("Revolab benchmark by domain: base vs final run"); ax.legend(loc="lower right")
+    for d, i in zip(domains, y):
+        if d in ("singing", "telephony", "short-inputs"):
+            b, m = rev["base"][d]["wer"], rev["lora-1.7b-malay50h-babel"][d]["wer"]
+            ax.annotate(f"{b:.1f} -> {m:.1f}", (max(b, m) + 0.8, i), fontsize=7.5, color=INK2, va="center")
+    save(fig, out, "revolab_domains_final.png")
+
+    preds = {r: rows(os.path.join(res, f"babel_test_{r}_predictions.jsonl")) for r in runs}
+    fig = plt.figure(figsize=(12, 4)); gs = fig.add_gridspec(1, 2, width_ratios=[1, 0.9])
+    ax = fig.add_subplot(gs[0, 0]); top = top_substitutions(preds["lora-1.7b-malay50h-babel"])
+    hbar(ax, [f"{a} -> {b}" for (a, b), _ in top], [c for _, c in top], ["#404040"] * len(top), fmt="{:.0f}")
+    ax.set_title("lora-babel: top substitutions on babel_test (ref -> hyp)", fontsize=9); ax.set_xlabel("count over 377 clips")
+    ax = fig.add_subplot(gs[0, 1])
+    try:
+        import jiwer
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from score_malay import NORMS
+        num = NORMS["num"]
+        def neutral(t):
+            t = num(t)
+            for a, b in CONVENTIONS:
+                t = re.sub(a, b, t)
+            return t
+        raw = [jiwer.wer([num(r["ref"]) for r in preds[k]], [num(r["hyp"]) for r in preds[k]]) * 100 for k in runs]
+        neu = [jiwer.wer([neutral(r["ref"]) for r in preds[k]], [neutral(r["hyp"]) for r in preds[k]]) * 100 for k in runs]
+        y = np.arange(len(runs))[::-1]
+        ax.barh(y + 0.17, raw, height=0.3, color="#262626", edgecolor=SURFACE, linewidth=1.5, label="Malay + number normalization")
+        ax.barh(y - 0.17, neu, height=0.3, color="#9F9F9F", edgecolor=SURFACE, linewidth=1.5, label="+ spelling conventions neutralized")
+        for yi, a, b in zip(y, raw, neu):
+            ax.text(a + 0.3, yi + 0.17, f"{a:.1f}", va="center", fontsize=8, color=INK); ax.text(b + 0.3, yi - 0.17, f"{b:.1f}", va="center", fontsize=8, color=INK)
+        ax.set_yticks(y, ["base", "lora-babel"]); ax.tick_params(axis="y", length=0); ax.grid(axis="y", visible=False)
+        ax.set_xlim(0, max(raw) * 1.25); ax.set_xlabel("WER % on babel_test"); ax.set_title("WER with label spelling conventions neutralized", fontsize=9)
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22), fontsize=7.5)
+    except Exception as e:  # noqa: BLE001
+        ax.axis("off"); ax.text(0, 0.5, f"re-scoring skipped: {e}", fontsize=8, color=INK2)
+    fig.tight_layout(); save(fig, out, "babel_conventions_final.png")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--results", default="results/malay")
@@ -336,7 +389,7 @@ def main():
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     for f in (fig_train_curves, fig_train_curves_babel, fig_step_time, fig_wer_overview, fig_revolab_domains, fig_error_breakdown,
-              fig_babel_per_clip, fig_babel_conventions):
+              fig_babel_per_clip, fig_babel_conventions, fig_final_only):
         f(args.results, args.out)
 
 
