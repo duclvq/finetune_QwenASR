@@ -7,9 +7,9 @@ without a local GPU. Branches:
 | Branch | Content |
 |---|---|
 | `main` | Malay track (this README, [docs/malay.md](docs/malay.md)) |
-| `vi` | Vietnamese track: ViMD LoRA / QLoRA / full fine-tune, HQQ quantization, vLLM serving, realtime WebSocket gateway |
+| `vi` | Vietnamese track (its own README, report and results live only on that branch) |
 
-The trainer and evaluator are shared; `vi` has the older copies plus the Vietnamese-only tools.
+The trainer and evaluator are shared; `vi` has the older copies plus the Vietnamese-only tools. Nothing on `main` reports Vietnamese numbers.
 
 **Best system:** `lora-1.7b-malay50h-babel` (83h: 50h cleaned Malay + code-switch + English + 12h real conversational
 Malay). WER:
@@ -115,15 +115,18 @@ python eval_revolab.py --model_path <model> --runs <run>...      # Revolab bench
 `eval_wer.py` writes `<system>_predictions.jsonl` (ref, hyp, per-clip errors) and merges into `summary.json`, so
 systems can be added one at a time (`--skip_base`, `--only`).
 
-**Quantize and serve:**
+**Quantize, serve, benchmark:**
 ```bash
 python eval_quant.py --model_path <model> --adapter outputs/lora-1.7b-malay50h-babel/adapter --data <data> --split babel_test --lang Malay --configs bf16 q8 q4
 cd deploy && cp .env.example .env && docker compose up -d --build     # vLLM 0.14, OpenAI-compatible API on :8100, FP8 weights
-python deploy/bench.py --levels 1 2 4 8 16 32 64                      # RTF per clip length and per concurrency level
+python deploy/bench_offline.py                                        # Part 2 baseline: transformers bf16, one clip at a time
+python deploy/bench.py --levels 1 2 4 8 16 32 64 96 128 256           # served API: RTF per clip length and per concurrency level
 ```
 The first `eval_quant.py` call also writes the merged checkpoint `outputs/<run>/merged` that the container serves.
-Results on this model: int8 is free (babel_test 8.62 -> 8.65 WER), int4 costs ~1.4 WER, 3-bit collapses; see docs/malay.md.
-Served through vLLM FP8 on an RTX 5060 Ti: single-stream RTF 0.05, 64 concurrent requests at p95 RTF 0.15 (`deploy/README.md`).
+Quantization on this model: int8 is free (babel_test 8.62 -> 8.65 WER), int4 costs ~1.4 WER, 3-bit collapses.
+Serving on an RTX 5060 Ti 16 GB: transformers bf16 one clip at a time runs at RTF 0.39 with the GPU 17% busy; vLLM FP8
+runs a single stream at RTF 0.043 and sustains 128 concurrent requests at p95 RTF 0.29 (685x real time, 54 req/s);
+p95 RTF passes 0.5 at 256. Tables and the bottleneck analysis: `deploy/README.md`, `docs/malay.md`.
 
 **Whole pipeline:** `scripts/run_malay.sh` runs all five data builds, the best run and the four evaluations; each
 stage is skipped when its output exists.

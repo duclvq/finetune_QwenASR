@@ -63,10 +63,10 @@ class GpuSampler(threading.Thread):
                 "gpu_mem_gb": round(max(m) / 1024, 2), "gpu_power_w": round(statistics.mean(p))}
 
 
-def one(url, model, lang, clip):
+def one(url, model, lang, clip, max_tokens=400):
     t0 = time.perf_counter()
     r = requests.post(url, files={"file": ("clip.wav", clip["wav"], "audio/wav")},
-                      data={"model": model, "language": lang}, timeout=600)
+                      data={"model": model, "language": lang, "max_completion_tokens": max_tokens}, timeout=600)
     dt = time.perf_counter() - t0
     r.raise_for_status()
     return {"bucket": clip["bucket"], "seconds": clip["seconds"], "wall": dt, "rtf": dt / clip["seconds"],

@@ -1,0 +1,44 @@
+{
+  "model": "outputs/lora-1.7b-malay50h-babel/merged",
+  "backend": "transformers bf16, batch 1",
+  "gpu_gb_after_load": 3.8,
+  "gpu_gb_peak": 4.02,
+  "gpu_util_mean": 17,
+  "gpu_util_p95": 21,
+  "gpu_mem_gb": 15.51,
+  "gpu_power_w": 46,
+  "buckets": {
+    "2-5 s": {
+      "n": 16,
+      "rtf_avg": 0.407,
+      "rtf_p50": 0.366,
+      "rtf_p95": 0.622,
+      "latency_p50_s": 1.503,
+      "throughput_x_realtime": 2.5
+    },
+    "5-15 s": {
+      "n": 16,
+      "rtf_avg": 0.357,
+      "rtf_p50": 0.343,
+      "rtf_p95": 0.461,
+      "latency_p50_s": 2.898,
+      "throughput_x_realtime": 2.8
+    },
+    "15-30 s": {
+      "n": 16,
+      "rtf_avg": 0.4,
+      "rtf_p50": 0.395,
+      "rtf_p95": 0.499,
+      "latency_p50_s": 10.47,
+      "throughput_x_realtime": 2.5
+    },
+    "all": {
+      "n": 48,
+      "rtf_avg": 0.388,
+      "rtf_p50": 0.377,
+      "rtf_p95": 0.608,
+      "latency_p50_s": 2.898,
+      "throughput_x_realtime": 2.5
+    }
+  }
+}

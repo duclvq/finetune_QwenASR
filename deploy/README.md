@@ -141,6 +141,18 @@ r = client.audio.transcriptions.create(model="qwen3-asr-malay", file=open("sampl
 print(strip_prefix(r.text))
 ```
 
+### Always cap the output length
+
+vLLM's `/v1/audio/transcriptions` decodes up to `--max-model-len` (4,096 tokens) unless the request carries
+`max_completion_tokens`; it does not read `max_new_tokens` from the model's generation config. Two of the 377
+babel_test clips send the decoder into a repetition loop ("xiaomi xiaomi ...") in bf16 and FP8 alike; uncapped they
+emit ~1,200 words each and alone lift the set's WER from 8.6 to 20. Send `max_completion_tokens=400` (what the
+offline evaluation uses) with every request, as `deploy/eval_api.py` and `deploy/bench.py` do:
+
+```bash
+curl -s http://localhost:8100/v1/audio/transcriptions -F file=@clip.wav -F model=qwen3-asr-malay      -F language=ms -F max_completion_tokens=400
+```
+
 ## 4. QUANT: why `fp8`, and why there is no `q6`
 
 | `QUANT` | what vLLM does | GPU |
@@ -238,22 +250,49 @@ Things to confirm on the GPU box at first start:
 
 ## 9. Measured on an RTX 5060 Ti 16 GB (Docker Desktop / WSL2, FP8, GPU_MEM=0.6)
 
-`python deploy/bench.py --levels 1 2 4 8 16 32 64` (24 babel_test clips of 2-30 s, 48-64 requests per level, raw in
-`outputs/bench_api/`). Engine init 172 s (CUDA-graph capture), 10.6 GB VRAM, first request ~46 s warm-up.
+24 babel_test clips of 2-30 s (8 per duration bucket), 256 requests per concurrency level, raw results in
+`outputs/bench_api/` (`bench.py`) and `outputs/bench_api/offline.json` (`bench_offline.py`). Engine init 172 s
+(CUDA-graph capture), 11.3 GB VRAM, first request ~46 s warm-up.
+
+**Baseline, transformers backend, bf16, one clip at a time (no server):**
 
 | Clip length | avg RTF | p50 RTF | p95 RTF | p50 latency |
 |---|---|---|---|---|
-| 2-5 s | 0.056 | 0.049 | 0.080 | 0.21 s |
-| 5-15 s | 0.045 | 0.043 | 0.054 | 0.36 s |
-| 15-30 s | 0.046 | 0.046 | 0.058 | 1.19 s |
+| 2-5 s | 0.407 | 0.366 | 0.622 | 1.50 s |
+| 5-15 s | 0.357 | 0.343 | 0.461 | 2.90 s |
+| 15-30 s | 0.400 | 0.395 | 0.499 | 10.47 s |
 
-| Concurrent | avg RTF | p95 RTF | p95 latency | throughput (x real time) | req/s | GPU util | power |
-|---|---|---|---|---|---|---|---|
-| 1 | 0.049 | 0.077 | 1.50 s | 21 | 1.7 | 94% | 118 W |
-| 8 | 0.052 | 0.084 | 1.63 s | 151 | 11.6 | 99% | 119 W |
-| 16 | 0.058 | 0.091 | 1.74 s | 222 | 17.1 | 99% | 120 W |
-| 32 | 0.069 | 0.105 | 1.80 s | 286 | 22.0 | 99% | 119 W |
-| 64 | 0.086 | 0.151 | 1.92 s | 347 | 30.4 | 90% | 122 W |
+GPU 17% busy at 46 W: the per-token Python decode loop, not the GPU, sets the speed. Batching 8 clips in the same
+backend (`eval_quant.py`, 377 clips in 344 s) brings the aggregate RTF to 0.053.
 
-Compute-bound (99% SM utilization from 2 streams, 120 W of a 150 W limit); p95 RTF stays under 0.5 at every level
-tried. Whole-file requests, not the streaming gateway, and short runs per level.
+**Served, vLLM FP8, single stream by clip length:**
+
+| Clip length | avg RTF | p50 RTF | p95 RTF | p50 latency |
+|---|---|---|---|---|
+| 2-5 s | 0.049 | 0.045 | 0.071 | 0.18 s |
+| 5-15 s | 0.040 | 0.039 | 0.049 | 0.33 s |
+| 15-30 s | 0.042 | 0.042 | 0.052 | 1.09 s |
+
+**Served, by concurrency (256 requests per level):**
+
+| Concurrent | avg RTF | p50 RTF | p95 RTF | p95 latency | throughput (x real time) | req/s | GPU util | VRAM | power |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0.043 | 0.041 | 0.069 | 1.37 s | 24 | 1.9 | 97% | 11.3 GB | 123 W |
+| 2 | 0.046 | 0.043 | 0.074 | 1.42 s | 45 | 3.6 | 99% | 11.3 GB | 118 W |
+| 4 | 0.047 | 0.045 | 0.077 | 1.47 s | 87 | 6.9 | 99% | 11.3 GB | 118 W |
+| 8 | 0.050 | 0.047 | 0.081 | 1.56 s | 164 | 13.0 | 99% | 11.3 GB | 120 W |
+| 16 | 0.055 | 0.052 | 0.089 | 1.71 s | 294 | 23.3 | 98% | 11.3 GB | 125 W |
+| 32 | 0.066 | 0.062 | 0.107 | 2.02 s | 460 | 36.5 | 99% | 11.3 GB | 127 W |
+| 64 | 0.088 | 0.084 | 0.145 | 2.55 s | 614 | 48.7 | 97% | 11.3 GB | 130 W |
+| 96 | 0.114 | 0.109 | 0.191 | 3.18 s | 685 | 54.4 | 99% | 11.3 GB | 130 W |
+| 128 | 0.157 | 0.133 | 0.286 | 3.36 s | 684 | 54.3 | 97% | 11.3 GB | 131 W |
+| 256 | 0.224 | 0.155 | 0.610 | 3.82 s | 674 | 53.4 | 99% | 11.3 GB | 130 W |
+
+**Quality through the server (babel_test, 377 clips, `deploy/eval_api.py` + `score_malay.py`):** transformers bf16
+offline 8.62 WER, vLLM bf16 8.56, vLLM FP8 8.85 (Malay-normalised 7.81 / 7.77 / 8.02). FP8 costs ~0.25 WER.
+
+Reading: throughput saturates at ~685x real time (54 req/s) from 96 streams; p95 RTF stays under 0.3 up to 128
+concurrent requests and passes 0.5 at 256. The GPU is compute-bound (SM 97-99% from 2 streams, 120-130 W of a 150 W
+limit, VRAM flat at 11.3 GB). Beyond `MAX_SEQS=96` active sequences the extra requests queue in vLLM, which is what
+lifts p95 at 128-256; raising `MAX_SEQS` (and `GPU_MEM`) is the first knob to try. Whole-file requests only, no
+streaming gateway, each level a few seconds to two minutes long.

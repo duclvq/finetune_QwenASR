@@ -1,0 +1,18 @@
+{
+  "vllm-fp8": {
+    "infer_seconds": 71.0,
+    "All": {
+      "clips": 377,
+      "wer": 8.85,
+      "cer": 4.78
+    }
+  },
+  "vllm-bf16": {
+    "infer_seconds": 76.4,
+    "All": {
+      "clips": 377,
+      "wer": 8.56,
+      "cer": 4.68
+    }
+  }
+}

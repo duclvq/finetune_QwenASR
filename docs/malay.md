@@ -207,9 +207,71 @@ HQQ dequantizes on every matmul, so int8/int4 are 2-3x slower here; vLLM's FP8 p
 | HQQ int3, g16 | 73.85 (60 clips) | 59.77 | – | 4.28 GB | 478 s* |
 | HQQ int2, g64 | 104.90 (60 clips) | 138.16 | – | 5.95 GB | 432 s* |
 
-\* 60-clip subset. Same picture as on Vietnamese: int8 is free (+0.03 / -0.3 WER), int4 costs 1.4-3.2 WER, 3-bit and 2-bit collapse without calibration (group 16 helps but stays unusable). For serving,
+\* 60-clip subset. int8 is free (+0.03 / -0.3 WER), int4 costs 1.4-3.2 WER, 3-bit and 2-bit collapse without calibration (group 16 helps but stays unusable). For serving,
 `deploy/` uses vLLM's weight-only FP8 (near-lossless, no dequantization cost). The int4 memory reading (4.66 GB) is
-higher than on the Linux box (2.01 GB for the Vietnamese model) and was not investigated. Raw: `results/malay/quant_malay_*.json`.
+higher than int8's and was not investigated (HQQ 4-bit keeps extra fp32 state on this setup). Raw: `results/malay/quant_malay_*.json`.
+
+## Serving the best model: vLLM FP8 in Docker, baseline, load test, bottleneck
+
+`deploy/` serves the merged lora-babel checkpoint with vLLM 0.14 (`vllm/vllm-openai:v0.14.0` + qwen-asr) as an
+OpenAI-compatible API, weight-only FP8 on the LLM linears. Everything below was measured on the Windows PC
+(RTX 5060 Ti 16 GB, 150 W limit, Docker Desktop / WSL2); scripts `deploy/bench_offline.py`, `deploy/bench.py`,
+`deploy/eval_api.py`; raw numbers in `results/malay/offline_bench.json`, `served_bench.json`,
+`served_babel_test_*.json`.
+
+### Quality through the server (babel_test, 377 clips)
+
+| Path | basic WER | Malay-normalised WER | CER |
+|---|---|---|---|
+| transformers bf16, offline (`eval_quant.py`) | 8.62 | 7.81 | 4.37 |
+| vLLM bf16, served | 8.56 | 7.77 | 4.68 |
+| vLLM FP8, served | 8.85 | 8.02 | 4.78 |
+
+FP8 costs about 0.25 WER against bf16 on the same server, on the order of run-to-run noise. **One trap found on
+the way:** the first FP8 pass scored 20.0 WER. Two consecutive clips from one video send the decoder into a
+repetition loop ("xiaomi xiaomi ...") in bf16 and FP8 alike; offline they are cut at `max_new_tokens=400`, but vLLM's
+transcription endpoint ignores the generation config and decodes up to `max-model-len` (4,096), so each emitted
+~1,200 words and the pair alone added 11 WER points to the set. Fix: send `max_completion_tokens=400` with every
+request (now the default in the scripts, documented in `deploy/README.md`).
+
+### Baseline (Part 2): transformers bf16, one clip at a time
+
+| Clip length | n | avg RTF | p50 RTF | p95 RTF | p50 latency |
+|---|---|---|---|---|---|
+| 2-5 s | 16 | 0.407 | 0.366 | 0.622 | 1.50 s |
+| 5-15 s | 16 | 0.357 | 0.343 | 0.461 | 2.90 s |
+| 15-30 s | 16 | 0.400 | 0.395 | 0.499 | 10.47 s |
+
+GPU 17% busy at 46 W: the per-token Python decode loop sets the speed, not the GPU. Batching 8 clips in the same
+backend brings the aggregate RTF to 0.053 (377 clips, 6,480 s of audio, in 344 s).
+
+### Served (Parts 3-4): vLLM FP8, 24 clips of 2-30 s, 256 requests per level
+
+Single stream by clip length: 2-5 s p50 RTF 0.045 (0.18 s), 5-15 s 0.039 (0.33 s), 15-30 s 0.042 (1.09 s).
+
+| Concurrent | avg RTF | p50 RTF | p95 RTF | p95 latency | throughput (x real time) | req/s | GPU util | VRAM | power |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0.043 | 0.041 | 0.069 | 1.37 s | 24 | 1.9 | 97% | 11.3 GB | 123 W |
+| 4 | 0.047 | 0.045 | 0.077 | 1.47 s | 87 | 6.9 | 99% | 11.3 GB | 118 W |
+| 16 | 0.055 | 0.052 | 0.089 | 1.71 s | 294 | 23.3 | 98% | 11.3 GB | 125 W |
+| 32 | 0.066 | 0.062 | 0.107 | 2.02 s | 460 | 36.5 | 99% | 11.3 GB | 127 W |
+| 64 | 0.088 | 0.084 | 0.145 | 2.55 s | 614 | 48.7 | 97% | 11.3 GB | 130 W |
+| 96 | 0.114 | 0.109 | 0.191 | 3.18 s | 685 | 54.4 | 99% | 11.3 GB | 130 W |
+| 128 | 0.157 | 0.133 | 0.286 | 3.36 s | 684 | 54.3 | 97% | 11.3 GB | 131 W |
+| 256 | 0.224 | 0.155 | 0.610 | 3.82 s | 674 | 53.4 | 99% | 11.3 GB | 130 W |
+
+Optimization journey: one-clip transformers loop RTF 0.39 (GPU 17%) -> batch 8 in transformers 0.053 -> HQQ int8
+rejected for serving (2.7x slower from per-matmul dequantization) -> vLLM FP8 continuous batching 0.043 single
+stream -> 128 concurrent requests at p95 RTF 0.29, 685x real time; p95 RTF passes 0.5 at 256.
+
+### Bottleneck (Part 6)
+
+GPU compute: SM utilization 97-99% from 2 streams on, 120-131 W of the 150 W limit (not power-capped), VRAM flat
+at 11.3 GB of 16. Throughput saturates at ~685x real time from 96 streams; beyond `MAX_SEQS=96` active sequences the
+extra requests queue in vLLM, which is what lifts p95 from 0.19 (96) to 0.61 (256). First knob to try: raise
+`MAX_SEQS` with more KV cache (`GPU_MEM`) and `--kv-cache-dtype fp8`. Host-side: WSL2 disables pinned memory; a
+native Linux host would be faster. Whole-file requests only; streaming (VAD + partials) was not load-tested on
+this model.
 
 ## Next steps
 
