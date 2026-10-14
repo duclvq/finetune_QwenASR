@@ -5,6 +5,8 @@
 Needs REVOLAB_DIR (clone of revolab-asr-benchmark) for the label-convention figure, which re-scores babel_test
 with score_malay's normalizer; that figure is skipped with a warning if the import fails.
 """
+import os
+os.environ.setdefault("USE_TF", "0")  # transformers 4.57 breaks on import if TensorFlow is installed
 import argparse
 import collections
 import difflib
@@ -126,14 +128,14 @@ def fig_train_curves(res, out):
 
 
 def fig_train_curves_babel(res, out):
-    """Train and eval loss of the final run only (lora-babel), greys."""
+    """Train and eval loss of the final run only (lora-babel), palette colours."""
     steps, by, evals = train_log(os.path.join(res, "train_log_lora50h-babel.jsonl"))
     fig, (a, b) = plt.subplots(1, 2, figsize=(11, 3.6))
-    a.plot(steps, smooth([by[s]["loss"] for s in steps]), color="#404040")
+    a.plot(steps, smooth([by[s]["loss"] for s in steps]), color=COLOR["lora-1.7b-malay50h-babel"])
     a.set_title("Train loss, lora-babel (per-step, 50-step rolling mean)")
     a.set_ylabel("loss"); a.set_xlabel("optimizer step (effective batch 16)"); a.set_ylim(1.2, 3.2)
     ex, ey = zip(*evals)
-    b.plot(ex, ey, color="#404040", marker="o", markersize=4, markeredgecolor=SURFACE, markeredgewidth=1)
+    b.plot(ex, ey, color=COLOR["lora-1.7b-malay50h-babel"], marker="o", markersize=4, markeredgecolor=SURFACE, markeredgewidth=1)
     b.annotate(f"final {ey[-1]:.3f}", (ex[-1], ey[-1]), textcoords="offset points", xytext=(6, 4), fontsize=8, color=INK2)
     b.set_title("Eval loss (200 valid clips, every 200 steps)")
     b.set_xlabel("optimizer step (effective batch 16)"); b.set_ylim(0.74, 1.0)
@@ -332,7 +334,7 @@ def fig_babel_conventions(res, out):
 def fig_final_only(res, out):
     """Grey, final-run-only variants of the Revolab-by-domain and label-convention figures (for the deck)."""
     rev = J(os.path.join(res, "revolab_summary.json"))
-    runs = ["base", "lora-1.7b-malay50h-babel"]; col = {"base": "#BFBFBF", "lora-1.7b-malay50h-babel": "#262626"}
+    runs = ["base", "lora-1.7b-malay50h-babel"]; col = {r: COLOR[r] for r in runs}
     domains = [d for d in rev["base"] if d not in ("infer_seconds", "All")]
     domains.sort(key=lambda d: rev["base"][d]["wer"])
     fig, ax = plt.subplots(figsize=(9, 5)); y = np.arange(len(domains))
@@ -354,7 +356,7 @@ def fig_final_only(res, out):
     preds = {r: rows(os.path.join(res, f"babel_test_{r}_predictions.jsonl")) for r in runs}
     fig = plt.figure(figsize=(12, 4)); gs = fig.add_gridspec(1, 2, width_ratios=[1, 0.9])
     ax = fig.add_subplot(gs[0, 0]); top = top_substitutions(preds["lora-1.7b-malay50h-babel"])
-    hbar(ax, [f"{a} -> {b}" for (a, b), _ in top], [c for _, c in top], ["#404040"] * len(top), fmt="{:.0f}")
+    hbar(ax, [f"{a} -> {b}" for (a, b), _ in top], [c for _, c in top], [ERR_COLORS["sub"]] * len(top), fmt="{:.0f}")
     ax.set_title("lora-babel: top substitutions on babel_test (ref -> hyp)", fontsize=9); ax.set_xlabel("count over 377 clips")
     ax = fig.add_subplot(gs[0, 1])
     try:
@@ -370,8 +372,8 @@ def fig_final_only(res, out):
         raw = [jiwer.wer([num(r["ref"]) for r in preds[k]], [num(r["hyp"]) for r in preds[k]]) * 100 for k in runs]
         neu = [jiwer.wer([neutral(r["ref"]) for r in preds[k]], [neutral(r["hyp"]) for r in preds[k]]) * 100 for k in runs]
         y = np.arange(len(runs))[::-1]
-        ax.barh(y + 0.17, raw, height=0.3, color="#262626", edgecolor=SURFACE, linewidth=1.5, label="Malay + number normalization")
-        ax.barh(y - 0.17, neu, height=0.3, color="#9F9F9F", edgecolor=SURFACE, linewidth=1.5, label="+ spelling conventions neutralized")
+        ax.barh(y + 0.17, raw, height=0.3, color="#2a78d6", edgecolor=SURFACE, linewidth=1.5, label="Malay + number normalization")
+        ax.barh(y - 0.17, neu, height=0.3, color="#eb6834", edgecolor=SURFACE, linewidth=1.5, label="+ spelling conventions neutralized")
         for yi, a, b in zip(y, raw, neu):
             ax.text(a + 0.3, yi + 0.17, f"{a:.1f}", va="center", fontsize=8, color=INK); ax.text(b + 0.3, yi - 0.17, f"{b:.1f}", va="center", fontsize=8, color=INK)
         ax.set_yticks(y, ["base", "lora-babel"]); ax.tick_params(axis="y", length=0); ax.grid(axis="y", visible=False)

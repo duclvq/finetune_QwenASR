@@ -5,6 +5,8 @@ QLoRA adapters are merged into the bf16 base for evaluation.
 
 Usage: python eval_wer.py [--max_samples N] [--out outputs/eval_test]
 """
+import os
+os.environ.setdefault("USE_TF", "0")  # transformers 4.57 breaks on import if TensorFlow is installed
 import argparse
 import json
 import os

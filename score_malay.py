@@ -6,6 +6,8 @@
 
 Usage: python score_malay.py --dir outputs/eval_malay50h [--systems base lora-1.7b-malay50h]
 """
+import os
+os.environ.setdefault("USE_TF", "0")  # transformers 4.57 breaks on import if TensorFlow is installed
 import argparse
 import json
 import os
