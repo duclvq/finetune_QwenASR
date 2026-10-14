@@ -161,8 +161,10 @@ stage is skipped when its output exists.
 
 - `results/malay/`: `train_log_*.jsonl`, `train_summary_*.json`, `test_*`, `revolab_*`, `cs_test_*`, `babel_test_*`
   predictions and scores for every system in the report.
-- Adapters are not in git or on the Hub: `lora-1.7b-malay50h-mix` and `lora-1.7b-malay50h-babel` are on the training
-  PC under `outputs/<run>/adapter` and in Google Drive `My_dataset/outputs/<run>/adapter`. The prepared data
+- Best model on the Hub (public): adapter [`duclvQ/qwen3-asr-1.7b-malay-lora`](https://huggingface.co/duclvQ/qwen3-asr-1.7b-malay-lora),
+  merged checkpoint [`duclvQ/qwen3-asr-1.7b-malay-merged`](https://huggingface.co/duclvQ/qwen3-asr-1.7b-malay-merged)
+  (what `deploy/` serves; `MODEL_PATH=duclvQ/qwen3-asr-1.7b-malay-merged` works too). Other runs' adapters are on the
+  training PC under `outputs/<run>/adapter` and in Google Drive `My_dataset/outputs/<run>/adapter`; the prepared data
   `malay_50h_babel` (10.6 GB) is in the same Drive folder.
 - Not in git: `outputs/` (runs, evals, queue scripts), `models/`, `data/`, `.venv/`, `.env` (`HF_TOKEN`).
 

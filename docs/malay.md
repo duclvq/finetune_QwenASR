@@ -304,6 +304,6 @@ this model.
 All figures: `python plot_malay.py` (reads `results/malay/`, writes `docs/figures/`).
 See `scripts/run_malay.sh` (the full data -> train -> eval chain with the paths used here) and the Colab notebook
 for training/evaluating without a local GPU. Per-clip predictions, scores and train logs for all systems are in
-`results/malay/` (`test_*`, `revolab_*`, `cs_test_*`, `babel_test_*`, `train_log_*`, `train_summary_*`). Adapters are
-not in git: `lora-1.7b-malay50h-mix` and `lora-1.7b-malay50h-babel` are in the Drive folder
-`My_dataset/outputs/<run>/adapter` and on the training PC under `outputs/<run>/adapter`.
+`results/malay/` (`test_*`, `revolab_*`, `cs_test_*`, `babel_test_*`, `train_log_*`, `train_summary_*`). The best adapter is
+public on the Hub as `duclvQ/qwen3-asr-1.7b-malay-lora` and merged as `duclvQ/qwen3-asr-1.7b-malay-merged`; the other
+runs' adapters are in the Drive folder `My_dataset/outputs/<run>/adapter` and on the training PC under `outputs/<run>/adapter`.
