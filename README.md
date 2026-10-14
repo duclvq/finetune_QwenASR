@@ -146,6 +146,8 @@ python eval_quant.py --model_path <model> --adapter outputs/lora-1.7b-malay50h-b
 cd deploy && cp .env.example .env && docker compose up -d --build     # vLLM 0.14, OpenAI-compatible API on :8100, FP8 weights
 python deploy/bench_offline.py                                        # Part 2 baseline: transformers bf16, one clip at a time
 python deploy/bench.py --levels 1 2 4 8 16 32 64 96 128 256           # served API: RTF per clip length and per concurrency level
+python deploy/eval_api.py --data <data> --split babel_test --out outputs/eval_api && python score_malay.py --dir outputs/eval_api   # WER through the server
+python plot_malay.py                                                  # regenerate every figure in docs/figures/ from results/malay/
 ```
 The first `eval_quant.py` call also writes the merged checkpoint `outputs/<run>/merged` that the container serves.
 Quantization on this model: int8 is free (babel_test 8.62 -> 8.65 WER), int4 costs ~1.4 WER, 3-bit collapses.
