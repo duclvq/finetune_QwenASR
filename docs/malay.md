@@ -8,6 +8,21 @@ system.** Part of its gain on BabelSpeech is label-convention matching (see "How
 
 The short version and the repository guide are in the top-level [README](../README.md).
 
+## Datasets: what they are, where they come from, what domain, why
+
+| Dataset | Source and licence | Size used | Domain and labels | Why it is in the mix |
+|---|---|---|---|---|
+| **Malay base** | `mesolitica/malaya-speech-malay-stt` (Hugging Face; whole set 1.63 M clips / ~2,600 h / 53 GB parquet) | 50 h random train subset (fixed seed), 1,994-clip test | Web-crawled Malay speech (YouTube, podcasts, read speech), no domain tags. Labels are semi-supervised Google Speech-to-Text, lowercase, no punctuation; ~6% truncated | The only large public Malay ASR corpus; 50 h is enough to move the model and cheap enough (2 h per run on a 16 GB GPU) to iterate |
+| **Synth-Manglish** | `emhaihsan/Synth-Manglish` (Hugging Face) | ~7 h train, 221-clip `cs_test` | TTS of Malay-English code-switched sentences, a few fixed voices; everyday-conversation style, not real speakers | Cheapest code-switch signal available; added after the Malay-only LoRA started rewriting English as Malay. Its test split is in-distribution and optimistic |
+| **cs_pilot** | one Malaysian podcast episode, cut locally (`D:/cs_mining/cs_pilot`, not public) | 200 clips, train only | Real podcast code-switch; labels machine-made (Qwen3-ASR + Whisper merged by an LLM), unchecked | A few real code-switch examples; no result is reported on it because the labels are not verified |
+| **FLEURS en_us** | `google/fleurs`, config `en_us` (Hugging Face, CC-BY) | 5 h train, tagged `language English` | Read Wikipedia sentences in English | Keeps the English language token alive so English words inside Malay speech are not forced into Malay |
+| **BabelSpeech** | `BabelSpeech/50hours_Malay_Real-world_Colloquial_Conversation_and_Monologue_Speech_Dataset` (Hugging Face, Apache-2.0; the download holds 34.9 h / 10,319 clips from 10 speakers, spk005 alone 23 h) | 12 h train (per-speaker cap 10 h), spk001 (1.8 h, 377 clips) held out as `babel_test` | YouTube colloquial Malay with natural English code-switching; README domains: technology, entertainment, travel, education, daily life. The dominant speaker reviews phones and gadgets. Human-checked labels (>98% claimed), SNR and DNSMOS per clip | The only human-labelled real conversational code-switch data found; whole-speaker hold-out gives the one real code-switch test in this report |
+| **Revolab benchmark** (test only) | `Revolab/ASR-Benchmark-Public` (Hugging Face, gated) + normalizer from `revolab-sdn-bhd/revolab-asr-benchmark` | 820 clips | 12 domains: news, parliament, read speech, commonvoice, fleurs, drama, animation, podcast, street interview, telephony, singing, short inputs; human labels | Out-of-domain check for every run; the set that exposed English forgetting (telephony 14 -> 33) |
+
+Download: `huggingface-cli download <repo> --repo-type dataset` into `D:/hf_datasets/` (Revolab needs `huggingface-cli login`);
+`data_prep/build_malay_dataset.py`, `build_malay_mix.py`, `build_malay_babel.py` turn them into the prepared format.
+All extra transcripts are lowercased and stripped of punctuation to match the Malay labels.
+
 ## Systems
 
 | System | Train data | Hours / clips | Steps | Trained on |
