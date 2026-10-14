@@ -125,6 +125,23 @@ def fig_train_curves(res, out):
     save(fig, out, "train_curves.png")
 
 
+def fig_train_curves_babel(res, out):
+    """Train and eval loss of the final run only (lora-babel), greys."""
+    steps, by, evals = train_log(os.path.join(res, "train_log_lora50h-babel.jsonl"))
+    fig, (a, b) = plt.subplots(1, 2, figsize=(11, 3.6))
+    a.plot(steps, smooth([by[s]["loss"] for s in steps]), color="#404040")
+    a.set_title("Train loss, lora-babel (per-step, 50-step rolling mean)")
+    a.set_ylabel("loss"); a.set_xlabel("optimizer step (effective batch 16)"); a.set_ylim(1.2, 3.2)
+    ex, ey = zip(*evals)
+    b.plot(ex, ey, color="#404040", marker="o", markersize=4, markeredgecolor=SURFACE, markeredgewidth=1)
+    b.annotate(f"final {ey[-1]:.3f}", (ex[-1], ey[-1]), textcoords="offset points", xytext=(6, 4), fontsize=8, color=INK2)
+    b.set_title("Eval loss (200 valid clips, every 200 steps)")
+    b.set_xlabel("optimizer step (effective batch 16)"); b.set_ylim(0.74, 1.0)
+    a.axvline(800, color=GRID, linewidth=1); b.axvline(800, color=GRID, linewidth=1)
+    a.text(830, 3.12, "resumed on Colab A100 from step 800", fontsize=7.5, color=INK2, va="top")
+    save(fig, out, "train_curves_babel.png")
+
+
 def fig_step_time(res, out):
     fig, ax = plt.subplots(figsize=(11, 3.2))
     for run, lab in [("lora-1.7b-malay50h-mix", "lora-mix, RTX 5060 Ti (Windows, P-core pinned)"),
@@ -318,7 +335,7 @@ def main():
     ap.add_argument("--out", default="docs/figures")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
-    for f in (fig_train_curves, fig_step_time, fig_wer_overview, fig_revolab_domains, fig_error_breakdown,
+    for f in (fig_train_curves, fig_train_curves_babel, fig_step_time, fig_wer_overview, fig_revolab_domains, fig_error_breakdown,
               fig_babel_per_clip, fig_babel_conventions):
         f(args.results, args.out)
 
