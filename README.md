@@ -59,7 +59,6 @@ deploy/
 notebooks/colab_train_malay_babel.ipynb   resume training + evaluate on a Colab A100 from Drive checkpoints
 docs/malay.md              full report (datasets, runs, results, quantization, serving, bottleneck, next steps)
 docs/figures/              charts used in the report (plot_malay.py)
-docs/talk_script_data_and_training.md     spoken narration for the data and training story
 docs/bao_cao_tong_hop.md   consolidated report in Vietnamese
 results/malay/             every run's train log / summary, every test prediction, quantization and serving summaries
 requirements.txt           pinned Python deps (torch installed separately)
