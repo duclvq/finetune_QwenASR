@@ -28,25 +28,51 @@ steps: [docs/malay.md](docs/malay.md).
 ## Repository layout
 
 ```
-train_qwen_asr.py      LoRA / QLoRA / full trainer (--mode), per-step log, auto-resume from the last checkpoint
-eval_wer.py            WER/CER of base + adapters on a prepared split; writes per-clip predictions
-score_malay.py         Malay scoring (Revolab text normalizer + number spelling) of eval_wer.py predictions
-eval_revolab.py        Revolab/ASR-Benchmark-Public (820 clips, 12 domains), per-domain WER
-eval_quant.py          merge a LoRA adapter, then HQQ weight-only quantization sweep (bf16 / int8 / int4 / ...) with WER and memory
+train_qwen_asr.py      LoRA / QLoRA / full trainer (--mode), per-step train_log.jsonl, auto-resume from the last checkpoint
+eval_wer.py            WER/CER of base + adapters on a prepared split; writes <system>_predictions.jsonl + summary.json
+score_malay.py         re-scores eval_wer.py predictions with Revolab's Malay text normalizer + number spelling
+eval_revolab.py        Revolab/ASR-Benchmark-Public (820 clips, 12 domains), per-domain WER with the benchmark's scoring
+eval_quant.py          merges a LoRA adapter into the base (outputs/<run>/merged), then sweeps HQQ int8/int4/... for WER and memory
+plot_malay.py          regenerates every figure in docs/malay.md from results/malay/ into docs/figures/
 tb_sync.py             mirrors outputs/*/train_log.jsonl into TensorBoard, live
-plot_malay.py          draws every figure in docs/malay.md from results/malay/ into docs/figures/
 smoke_test.py          loads the base model and transcribes one clip (transformers or vllm backend)
-data_prep/             dataset builders: build, 50h subset, VAD stats, label cleaning, code-switch/English mix, BabelSpeech
-scripts/               run_malay.sh (data -> train -> eval chain), setup.sh + env.sh (Linux venv + GPU)
-notebooks/             colab_train_malay_babel.ipynb: resume training and evaluate on a Colab A100 from Drive
-deploy/                Docker Compose serving with vLLM (FP8) + bench.py API load test; see deploy/README.md
-docs/malay.md          full report; docs/figures/ its charts (training curves, WER by test/domain, error analysis)
-results/malay/         every run's train log / summary and every test prediction (source of all numbers)
-requirements.txt       pinned Python deps (torch installed separately)
+
+data_prep/
+  build_malay_dataset.py   malaya-speech parquet -> prepared format (train/valid/test), up to N hours, resumable per shard
+  subset_malay.py          random N-hour train subset of a prepared build
+  vad_stats.py             Silero VAD speech seconds per clip -> <split>/vad.jsonl
+  clean_malay_subset.py    drops clips whose label is too short for the speech, tops the subset back up
+  build_malay_mix.py       + Synth-Manglish + cs_pilot code-switch + FLEURS English (tagged language English); carves cs_test
+  build_malay_babel.py     + BabelSpeech, per-speaker cap, whole speakers held out as babel_test
+
+scripts/
+  run_malay.sh             the whole chain: data builds -> best LoRA run -> four evaluations (skips finished stages)
+  setup.sh, env.sh         Linux venv (uv), model download, GPU selection
+
+deploy/
+  Dockerfile, docker-compose.yml, entrypoint.sh, .env.example   vLLM 0.14 + qwen-asr serving, FP8 or bf16, healthcheck
+  bench_offline.py         Part 2 baseline: transformers bf16, one clip at a time, RTF per clip-length bucket
+  bench.py                 served-API load test: RTF / latency / throughput per concurrency level, GPU sampling
+  eval_api.py              transcribes a whole split through the API in eval_wer.py format (then score_malay.py)
+  README.md                how to run, call, tune; measured baseline, concurrency table, bottleneck
+
+notebooks/colab_train_malay_babel.ipynb   resume training + evaluate on a Colab A100 from Drive checkpoints
+docs/malay.md              full report (datasets, runs, results, quantization, serving, bottleneck, next steps)
+docs/figures/              charts used in the report (plot_malay.py)
+docs/talk_script_data_and_training.md     spoken narration for the data and training story
+docs/bao_cao_tong_hop.md   consolidated report in Vietnamese
+results/malay/             every run's train log / summary, every test prediction, quantization and serving summaries
+requirements.txt           pinned Python deps (torch installed separately)
 ```
 
+**How the pieces fit.** `data_prep/` turns raw corpora into the prepared format below (one `audio.bin` + `meta.jsonl`
+per split under `<data>/`). `train_qwen_asr.py` reads a prepared `train/` and `valid/` and writes
+`outputs/<run>/adapter` (plus checkpoints, `train_log.jsonl`, `summary.json`). `eval_wer.py` loads base + adapter and
+writes per-clip predictions for any split; `score_malay.py` and `eval_revolab.py` score them. `eval_quant.py` merges
+the adapter into `outputs/<run>/merged`, which is what `deploy/` serves; `deploy/bench*.py` and `eval_api.py` measure
+the served model. Everything reported lives under `results/`; `outputs/` is the working directory and is not in git.
 Python scripts stay at the root on purpose: they import each other (`eval_wer` -> `train_qwen_asr`,
-`score_malay` -> `eval_wer`) and are run as `python <script>.py` from the root.
+`score_malay` -> `eval_wer`, `deploy/*` -> `eval_wer`) and are run as `python <script>.py` from the root.
 
 ## Setup
 
